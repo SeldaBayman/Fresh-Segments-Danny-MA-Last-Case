@@ -9,89 +9,88 @@ Interest Analysis
 
 1. Which interests have been present in all month_year dates in our dataset?
 
-SELECT 
-    interest_id
-FROM 
-    fresh_segments.interest_metrics
-GROUP BY 
-    interest_id
-HAVING 
-    COUNT(DISTINCT month_year) = (SELECT COUNT(DISTINCT month_year) FROM fresh_segments.interest_metrics);
+SELECT interest_id
+FROM interest_metrics
+GROUP BY interest_id
+HAVING COUNT(DISTINCT month_year) = 
+(SELECT COUNT(DISTINCT month_year) FROM interest_metrics);
 
-2. Calculate the cumulative percentage of all records starting at 14 months. Which total_months value passes the 90% cumulative percentage value?
+2. Calculate the cumulative percentage of all records starting at 14 months. 
+Which total_months value passes the 90% cumulative percentage value?
 
-WITH interest_months AS (
+WITH months AS (
     SELECT 
         interest_id, 
-        COUNT(DISTINCT month_year) AS total_months
+        COUNT(DISTINCT month_year) AS total_month
     FROM 
-        fresh_segments.interest_metrics
+        interest_metrics
     GROUP BY 
         interest_id
 ),
-cumulative_distribution AS (
+cumulative AS (
     SELECT 
         total_months,
-        COUNT(*) AS count_per_month,
-        SUM(COUNT(*)) OVER (ORDER BY total_months) AS cumulative_count,
+        COUNT(*) AS count,
+        SUM(COUNT(*)) OVER (ORDER BY total_month) AS cum_count
         SUM(COUNT(*)) OVER () AS total_count
     FROM 
-        interest_months
+        months
     GROUP BY 
-        total_months
+        total_month
 )
 SELECT 
-    total_months,
-    ROUND(100.0 * cumulative_count / total_count, 2) AS cumulative_percentage
+    total_month
+    ROUND(100.0 * cum_count / count, 2) AS percent
 FROM 
-    cumulative_distribution
+    cumulative
 WHERE 
-    cumulative_percentage >= 90
+    percent >= 90
 LIMIT 1;
 
-3. If we remove all interest_id values lower than the total_months value from the previous question, how many total data points would we be removing?
+3. If we remove all interest_id values lower than the total_months value from the previous question,
+ how many total data points would we be removing?
 
-WITH interest_months AS (
+WITH interest AS (
     SELECT 
         interest_id, 
-        COUNT(DISTINCT month_year) AS total_months
+        COUNT(DISTINCT month_year) AS total
     FROM 
-        fresh_segments.interest_metrics
+       interest_metrics
     GROUP BY 
         interest_id
 ),
-cumulative_distribution AS (
+cumulative AS (
     SELECT 
-        total_months,
-        COUNT(*) AS count_per_month,
-        SUM(COUNT(*)) OVER (ORDER BY total_months) AS cumulative_count,
+        total,
+        COUNT(*) AS count,
+        SUM(COUNT(*)) OVER (ORDER BY total) AS cum_count,
         SUM(COUNT(*)) OVER () AS total_count
     FROM 
-        interest_months
+        interest
     GROUP BY 
-        total_months
+        total
 ),
 threshold AS (
     SELECT 
-        total_months
+        total
     FROM 
-        cumulative_distribution
+        cumulative
     WHERE 
-        ROUND(100.0 * cumulative_count / total_count, 2) >= 90
+        ROUND(100.0 * cum_count / total_count, 2) >= 90
     LIMIT 1
 )
 SELECT 
-    COUNT(*) AS total_points_removed
+    COUNT(*) AS removed
 FROM 
-    fresh_segments.interest_metrics
+    interest_metrics
 WHERE 
     interest_id IN (
         SELECT 
             interest_id
         FROM 
-            interest_months
+            interest
         WHERE 
-            total_months < (SELECT total_months FROM threshold)
+            total < (SELECT total FROM threshold)
     );
 
 4. Does this decision make sense to remove these data points from a business perspective?
@@ -99,70 +98,59 @@ Example Query for Interests with All 14 Months Present:
 
 SELECT 
     interest_id, 
-    COUNT(DISTINCT month_year) AS total_months
-FROM 
-    fresh_segments.interest_metrics
-GROUP BY 
-    interest_id
-HAVING 
-    COUNT(DISTINCT month_year) = 14;
-Example Query for Removed Interests:
+    COUNT(DISTINCT month_year) AS total
+FROM interest_metrics
+GROUP BY interest_id
+HAVING COUNT(DISTINCT month_year) = 14;
 
+
+Example Query for Removed Interests:
 
 SELECT 
     interest_id, 
-    COUNT(DISTINCT month_year) AS total_months
-FROM 
-    fresh_segments.interest_metrics
-GROUP BY 
-    interest_id
-HAVING 
-    total_months < 14;
+    COUNT(DISTINCT month_year) AS total
+    interest_metrics
+GROUP BY interest_id
+HAVING total_months < 14;
 
-Explanation:
-From a business perspective, removing interests with less than 14 months may discard valuable insights, especially if these segments represent emerging or seasonal trends. Comparing the two queries above helps determine the trade-off between retaining consistent data and losing potential growth indicators.
+--Explanation:
+--From a business perspective, removing interests with less than 14 months may discard valuable insights, especially if these segments represent emerging or seasonal trends. Comparing the two queries above helps determine the trade-off between retaining consistent data and losing potential growth indicators.
 
-5. After removing these interests, how many unique interests are there for each month?
+--5. After removing these interests, how many unique interests are there for each month?
 
-WITH interest_months AS (
+WITH interest AS (
     SELECT 
         interest_id, 
-        COUNT(DISTINCT month_year) AS total_months
-    FROM 
-        fresh_segments.interest_metrics
-    GROUP BY 
-        interest_id
+        COUNT(DISTINCT month_year) AS total
+    FROM interest_metrics
+    GROUP BY interest_id
 ),
 threshold AS (
     SELECT 
-        total_months
+        total
     FROM 
         (SELECT 
-             total_months,
-             COUNT(*) AS count_per_month,
-             SUM(COUNT(*)) OVER (ORDER BY total_months) AS cumulative_count,
+             total,
+             COUNT(*) AS count,
+             SUM(COUNT(*)) OVER (ORDER BY total) AS cumulative,
              SUM(COUNT(*)) OVER () AS total_count
          FROM 
-             interest_months
+             interest
          GROUP BY 
-             total_months) AS cumulative_distribution
+             total) AS cumulative_dist
     WHERE 
-        ROUND(100.0 * cumulative_count / total_count, 2) >= 90
+        ROUND(100.0 * cumulative / total_count, 2) >= 90
     LIMIT 1
 )
 SELECT 
     month_year,
-    COUNT(DISTINCT interest_id) AS unique_interests
-FROM 
-    fresh_segments.interest_metrics
-WHERE 
-    interest_id NOT IN (
+    COUNT(DISTINCT interest_id) AS unique
+FROM interest_metrics
+WHERE interest_id NOT IN (
         SELECT 
             interest_id
-        FROM 
-            interest_months
-        WHERE 
-            total_months < (SELECT total_months FROM threshold)
+        FROM interest
+        WHERE total< (SELECT total FROM threshold)
     )
 GROUP BY 
     month_year
